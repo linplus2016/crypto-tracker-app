@@ -19,7 +19,9 @@ services:
       start_period: 10s
 
   frontend:
-    build: ./frontend
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
     container_name: crypto-frontend
     restart: unless-stopped
     ports:
