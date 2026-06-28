@@ -96,7 +96,8 @@ def fetch_klines(symbol, interval, limit=20):
         if DATA_SOURCE == 'binance':
             params = {'symbol': symbol, 'interval': interval, 'limit': limit}
         else:  # okx
-            params = {'instId': symbol, 'bar': interval, 'limit': str(limit)}
+            okx_symbol = symbol.replace('USDT', '-USDT')
+            params = {'instId': okx_symbol, 'bar': interval, 'limit': str(limit)}
 
         url = f'{API_BASE}{endpoint}'
         resp = requests.get(url, params=params, timeout=10)
@@ -144,7 +145,8 @@ def fetch_price(symbol):
         if DATA_SOURCE == 'binance':
             params = {'symbol': symbol}
         else:  # okx
-            params = {'instId': symbol}
+            okx_symbol = symbol.replace('USDT', '-USDT')
+            params = {'instId': okx_symbol}
 
         url = f'{API_BASE}{endpoint}'
         resp = requests.get(url, params=params, timeout=10)
