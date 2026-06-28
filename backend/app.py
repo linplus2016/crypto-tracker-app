@@ -11,18 +11,36 @@ app = Flask(__name__)
 CORS(app)
 
 # 配置
-CACHE_DIR = os.path.join(os.path.dirname(__file__), 'cache')
-os.makedirs(CACHE_DIR, exist_ok=True)
+cache_dir = os.path.join(os.path.dirname(__file__), 'cache')
+os.makedirs(cache_dir, exist_ok=True)
 
-# Binance API 基础URL
-BINANCE_BASE = 'https://api.binance.com'
+# 数据源配置：可选 'binance' 或 'okx'
+DATA_SOURCE = 'okx'  # 切换这里
+
+# API 基础 URL
+API_BASE = {
+    'binance': 'https://api.binance.com',
+    'okx': 'https://www.okx.com',
+}[DATA_SOURCE]
+
+# 数据格式映射
+API_ENDPOINTS = {
+    'binance': {
+        'price': '/api/v3/ticker/24hr',
+        'klines': '/api/v3/klines',
+    },
+    'okx': {
+        'price': '/api/v5/market/ticker',
+        'klines': '/api/v5/market/history-candles',
+    },
+}
 
 # 缓存数据
 price_cache = {}
 klines_cache = {}
 analysis_cache = {}
-CACHE_TTL = 60  # 价格缓存60秒
-KLINE_CACHE_TTL = 300  # K线缓存5分钟
+cache_ttl = 60  # 价格缓存60秒
+kline_cache_ttl = 300  # K线缓存5分钟
 
 # 支持的币种配置
 COINS = {
@@ -43,7 +61,7 @@ INTERVALS = {
 
 
 def get_cache_path(key):
-    return os.path.join(CACHE_DIR, f'{key}.json')
+    return os.path.join(cache_dir, f'{key}.json')
 
 
 def read_cache(key, ttl):
@@ -66,35 +84,46 @@ def write_cache(key, data):
         json.dump({'timestamp': time.time(), 'data': data}, f)
 
 
-def fetch_binance_klines(symbol, interval, limit=20):
-    """从Binance获取K线数据"""
+def fetch_klines(symbol, interval, limit=20):
+    """获取K线数据"""
     cache_key = f'klines_{symbol}_{interval}_{limit}'
-    cached = read_cache(cache_key, KLINE_CACHE_TTL)
+    cached = read_cache(cache_key, kline_cache_ttl)
     if cached:
         return cached
 
     try:
-        url = f'{BINANCE_BASE}/api/v3/klines'
-        params = {
-            'symbol': symbol,
-            'interval': interval,
-            'limit': limit
-        }
+        endpoint = API_ENDPOINTS[DATA_SOURCE]['klines']
+        if DATA_SOURCE == 'binance':
+            params = {'symbol': symbol, 'interval': interval, 'limit': limit}
+        else:  # okx
+            params = {'instId': symbol, 'bar': interval, 'limit': str(limit)}
+
+        url = f'{API_BASE}{endpoint}'
         resp = requests.get(url, params=params, timeout=10)
         resp.raise_for_status()
         data = resp.json()
 
-        # 转换格式
         klines = []
-        for item in data:
-            klines.append({
-                'timestamp': item[0],
-                'open': float(item[1]),
-                'high': float(item[2]),
-                'low': float(item[3]),
-                'close': float(item[4]),
-                'volume': float(item[5])
-            })
+        if DATA_SOURCE == 'binance':
+            for item in data:
+                klines.append({
+                    'timestamp': item[0],
+                    'open': float(item[1]),
+                    'high': float(item[2]),
+                    'low': float(item[3]),
+                    'close': float(item[4]),
+                    'volume': float(item[5])
+                })
+        else:  # okx
+            for item in data['data']:
+                klines.append({
+                    'timestamp': int(item[0]),
+                    'open': float(item[1]),
+                    'high': float(item[2]),
+                    'low': float(item[3]),
+                    'close': float(item[4]),
+                    'volume': float(item[5])
+                })
 
         write_cache(cache_key, klines)
         return klines
@@ -103,28 +132,44 @@ def fetch_binance_klines(symbol, interval, limit=20):
         return None
 
 
-def fetch_binance_price(symbol):
-    """从Binance获取实时价格"""
+def fetch_price(symbol):
+    """获取实时价格"""
     cache_key = f'price_{symbol}'
-    cached = read_cache(cache_key, CACHE_TTL)
+    cached = read_cache(cache_key, cache_ttl)
     if cached:
         return cached
 
     try:
-        url = f'{BINANCE_BASE}/api/v3/ticker/24hr'
-        params = {'symbol': symbol}
+        endpoint = API_ENDPOINTS[DATA_SOURCE]['price']
+        if DATA_SOURCE == 'binance':
+            params = {'symbol': symbol}
+        else:  # okx
+            params = {'instId': symbol}
+
+        url = f'{API_BASE}{endpoint}'
         resp = requests.get(url, params=params, timeout=10)
         resp.raise_for_status()
         data = resp.json()
 
-        result = {
-            'price': float(data['lastPrice']),
-            'change_24h': float(data['priceChangePercent']),
-            'high_24h': float(data['highPrice']),
-            'low_24h': float(data['lowPrice']),
-            'volume_24h': float(data['volume']),
-            'timestamp': int(time.time() * 1000)
-        }
+        if DATA_SOURCE == 'binance':
+            result = {
+                'price': float(data['lastPrice']),
+                'change_24h': float(data['priceChangePercent']),
+                'high_24h': float(data['highPrice']),
+                'low_24h': float(data['lowPrice']),
+                'volume_24h': float(data['volume']),
+                'timestamp': int(time.time() * 1000)
+            }
+        else:  # okx
+            item = data['data'][0]
+            result = {
+                'price': float(item['last']),
+                'change_24h': round((float(item['last']) - float(item['open24h'])) / float(item['open24h']) * 100, 2) if float(item['open24h']) > 0 else 0,
+                'high_24h': float(item['high24h']),
+                'low_24h': float(item['low24h']),
+                'volume_24h': float(item['vol24h']),
+                'timestamp': int(time.time() * 1000)
+            }
 
         write_cache(cache_key, result)
         return result
@@ -226,7 +271,7 @@ def get_price(coin):
         return jsonify({'error': 'Unsupported coin'}), 400
 
     symbol = COINS[coin]['symbol']
-    data = fetch_binance_price(symbol)
+    data = fetch_price(symbol)
 
     if not data:
         return jsonify({'error': 'Failed to fetch price'}), 500
@@ -250,10 +295,10 @@ def get_klines(coin, interval):
         return jsonify({'error': 'Unsupported interval'}), 400
 
     symbol = COINS[coin]['symbol']
-    binance_interval = INTERVALS[interval]
+    api_interval = INTERVALS[interval]
     limit = request.args.get('limit', 20, type=int)
 
-    klines = fetch_binance_klines(symbol, binance_interval, limit)
+    klines = fetch_klines(symbol, api_interval, limit)
 
     if not klines:
         return jsonify({'error': 'Failed to fetch klines'}), 500
@@ -281,11 +326,11 @@ def get_analysis(coin, interval):
         return jsonify({'error': 'Unsupported interval'}), 400
 
     symbol = COINS[coin]['symbol']
-    binance_interval = INTERVALS[interval]
+    api_interval = INTERVALS[interval]
 
     # 获取K线和价格数据
-    klines = fetch_binance_klines(symbol, binance_interval, 20)
-    price_data = fetch_binance_price(symbol)
+    klines = fetch_klines(symbol, api_interval, 20)
+    price_data = fetch_price(symbol)
 
     if not klines:
         return jsonify({'error': 'Failed to fetch data'}), 500
@@ -350,12 +395,12 @@ def get_all_data(coin):
     symbol = COINS[coin]['symbol']
 
     # 获取价格
-    price_data = fetch_binance_price(symbol)
+    price_data = fetch_price(symbol)
 
     # 获取所有周期的K线和分析
     intervals_data = {}
-    for interval_key, binance_interval in INTERVALS.items():
-        klines = fetch_binance_klines(symbol, binance_interval, 20)
+    for interval_key, api_interval in INTERVALS.items():
+        klines = fetch_klines(symbol, api_interval, 20)
         support, resistance = calculate_support_resistance(klines) if klines else (None, None)
         analysis = generate_analysis(coin, interval_key, klines, price_data) if klines else ""
 
@@ -404,10 +449,10 @@ def background_refresh():
             for coin_id, coin_info in COINS.items():
                 symbol = coin_info['symbol']
                 # 刷新价格
-                fetch_binance_price(symbol)
+                fetch_price(symbol)
                 # 刷新所有周期K线
                 for interval in INTERVALS.values():
-                    fetch_binance_klines(symbol, interval, 20)
+                    fetch_klines(symbol, interval, 20)
                 print(f'[{datetime.now()}] Refreshed data for {coin_id}')
             time.sleep(30)  # 每30秒刷新一次
         except Exception as e:
