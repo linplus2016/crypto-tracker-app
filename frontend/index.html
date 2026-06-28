@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>加密行情追踪</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-card: rgba(20, 25, 40, 0.85);
+            --bg-level: rgba(15, 22, 35, 0.9);
+            --text-primary: #ffffff;
+            --text-secondary: #9ca3af;
+            --text-muted: #6b7280;
+            --border-color: rgba(255, 255, 255, 0.06);
+            --border-level: rgba(255, 255, 255, 0.05);
+            --support-bg: rgba(34, 197, 94, 0.12);
+            --support-border: rgba(34, 197, 94, 0.3);
+            --support-text: #22c55e;
+            --resist-bg: rgba(239, 68, 68, 0.12);
+            --resist-border: rgba(239, 68, 68, 0.3);
+            --resist-text: #ef4444;
+            --glow-1: #f59e0b;
+            --glow-2: #6366f1;
+            --tab-active-bg: rgba(245, 158, 11, 0.15);
+            --tab-active-border: rgba(245, 158, 11, 0.5);
+            --tab-active-text: #fbbf24;
+        }
+
+        [data-theme="light"] {
+            --bg-primary: #f5f7fa;
+            --bg-card: rgba(255, 255, 255, 0.9);
+            --bg-level: rgba(255, 255, 255, 0.95);
+            --text-primary: #1f2937;
+            --text-secondary: #4b5563;
+            --text-muted: #9ca3af;
+            --border-color: rgba(0, 0, 0, 0.06);
+            --border-level: rgba(0, 0, 0, 0.05);
+            --support-bg: rgba(34, 197, 94, 0.08);
+            --support-border: rgba(34, 197, 94, 0.25);
+            --support-text: #16a34a;
+            --resist-bg: rgba(239, 68, 68, 0.08);
+            --resist-border: rgba(239, 68, 68, 0.25);
+            --resist-text: #dc2626;
+            --glow-1: #fbbf24;
+            --glow-2: #818cf8;
+            --tab-active-bg: rgba(245, 158, 11, 0.1);
+            --tab-active-border: rgba(245, 158, 11, 0.4);
+            --tab-active-text: #d97706;
+        }
+
+        * { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        body { 
+            background: var(--bg-primary); 
+            min-height: 100vh; 
+            color: var(--text-primary);
+            transition: background 0.3s ease, color 0.3s ease;
+        }
+
+        .bg-glow {
+            position: fixed; width: 300px; height: 300px;
+            border-radius: 50%; filter: blur(80px); opacity: 0.12; pointer-events: none; z-index: 0;
+            transition: background 0.3s ease;
+        }
+        .glow-1 { top: -100px; left: -100px; background: var(--glow-1); }
+        .glow-2 { bottom: -100px; right: -100px; background: var(--glow-2); }
+
+        .glass-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+            transition: all 0.3s ease;
+        }
+
+        .level-card {
+            background: var(--bg-level);
+            border: 1px solid var(--border-level);
+            transition: all 0.3s ease;
+        }
+        .level-card:hover { 
+            border-color: var(--border-color); 
+            transform: translateY(-2px); 
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        }
+
+        .support-tag {
+            background: var(--support-bg);
+            border: 1px solid var(--support-border);
+            color: var(--support-text);
+        }
+        .resist-tag {
+            background: var(--resist-bg);
+            border: 1px solid var(--resist-border);
+            color: var(--resist-text);
+        }
+
+        .trend-bull { color: var(--support-text); }
+        .trend-bear { color: var(--resist-text); }
+        .trend-neutral { color: #d97706; }
+        [data-theme="light"] .trend-neutral { color: #b45309; }
+
+        .level-dot { box-shadow: 0 0 8px currentColor; }
+
+        .kline-canvas { width: 100%; height: 96px; }
+
+        .analysis-text {
+            line-height: 1.6;
+            color: var(--text-secondary);
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--border-color);
+            border-top-color: var(--text-primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .theme-toggle {
+            position: relative;
+            width: 48px;
+            height: 26px;
+            border-radius: 13px;
+            background: var(--bg-level);
+            border: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .theme-toggle::after {
+            content: '';
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: var(--text-primary);
+            transition: transform 0.3s ease;
+        }
+        [data-theme="light"] .theme-toggle::after {
+            transform: translateX(22px);
+            background: #f59e0b;
+        }
+
+        .theme-icon {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 10px;
+            transition: opacity 0.3s ease;
+        }
+        .theme-icon-sun { left: 6px; opacity: 0; }
+        .theme-icon-moon { right: 6px; opacity: 1; }
+        [data-theme="light"] .theme-icon-sun { opacity: 1; }
+        [data-theme="light"] .theme-icon-moon { opacity: 0; }
+
+        .tab-container {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+        .tab-btn {
+            flex: 1;
+            padding: 10px 16px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-level);
+            color: var(--text-secondary);
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+        .tab-btn:hover {
+            border-color: var(--border-color);
+            transform: translateY(-1px);
+        }
+        .tab-btn.active {
+            background: var(--tab-active-bg);
+            border-color: var(--tab-active-border);
+            color: var(--tab-active-text);
+            box-shadow: 0 2px 12px rgba(245, 158, 11, 0.15);
+        }
+        .tab-btn .tab-icon { font-size: 16px; }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateX(20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .section-title { color: var(--text-secondary); }
+        .coin-subtitle { color: var(--text-muted); }
+
+        .error-msg {
+            padding: 12px 16px;
+            border-radius: 8px;
+            background: var(--resist-bg);
+            border: 1px solid var(--resist-border);
+            color: var(--resist-text);
+            font-size: 13px;
+            margin-bottom: 12px;
+        }
+
+        .refresh-btn {
+            padding: 4px 12px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-level);
+            color: var(--text-secondary);
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .refresh-btn:hover {
+            border-color: var(--tab-active-border);
+            color: var(--tab-active-text);
+        }
+    </style>
+</head>
+<body class="relative">
+
+    <div class="bg-glow glow-1"></div>
+    <div class="bg-glow glow-2"></div>
+
+    <div class="relative z-10 max-w-md mx-auto px-4 py-6 pb-24">
+
+        <!-- 顶部 -->
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <h1 class="text-2xl font-bold bg-gradient-to-r from-amber-500 to-orange-600 bg-clip-text text-transparent">
+                    加密行情追踪
+                </h1>
+                <p class="text-[10px] mt-0.5 font-mono tracking-widest" style="color: var(--text-muted)">CRYPTO TRACKER</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <div class="theme-toggle" onclick="toggleTheme()" title="切换主题">
+                    <span class="theme-icon theme-icon-sun">☀</span>
+                    <span class="theme-icon theme-icon-moon">☾</span>
+                </div>
+                <div class="flex items-center gap-2 px-3 py-1.5 rounded-full border" style="background: var(--bg-level); border-color: var(--border-color)">
+                    <div class="w-1.5 h-1.5 rounded-full animate-pulse" style="background: var(--support-text)"></div>
+                    <span class="text-[10px] font-mono" style="color: var(--text-muted)">LIVE</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 实时时间 -->
+        <div class="flex items-center gap-2 mb-4">
+            <svg class="w-4 h-4" style="color: var(--text-muted)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <span class="text-sm font-mono" id="current-time" style="color: var(--text-muted)">--</span>
+            <div class="flex-1 h-px" style="background: linear-gradient(to right, var(--border-color), transparent)"></div>
+            <button class="refresh-btn" onclick="refreshCurrent()">刷新</button>
+        </div>
+
+        <!-- Tab 切换 -->
+        <div class="tab-container">
+            <button class="tab-btn active" onclick="switchTab('btc')" id="tab-btc">
+                <span class="tab-icon">₿</span>
+                <span>Bitcoin</span>
+            </button>
+            <button class="tab-btn" onclick="switchTab('eth')" id="tab-eth">
+                <span class="tab-icon">Ξ</span>
+                <span>Ethereum</span>
+            </button>
+        </div>
+
+        <!-- 加载状态 -->
+        <div id="loading-state" class="text-center py-12" style="display:none">
+            <div class="loading-spinner mb-3"></div>
+            <p class="text-sm" style="color: var(--text-muted)">加载数据中...</p>
+        </div>
+
+        <!-- 错误状态 -->
+        <div id="error-state" style="display:none"></div>
+
+        <!-- ========== BTC 内容 ========== -->
+        <div id="content-btc" class="tab-content active">
+            <div id="btc-container">
+                <!-- 动态填充 -->
+            </div>
+        </div>
+
+        <!-- ========== ETH 内容 ========== -->
+        <div id="content-eth" class="tab-content">
+            <div id="eth-container">
+                <!-- 动态填充 -->
+            </div>
+        </div>
+
+        <!-- 底部 -->
+        <div class="text-center mt-8">
+            <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full border" style="background: var(--bg-level); border-color: var(--border-color)">
+                <div class="w-1.5 h-1.5 rounded-full animate-pulse" style="background: var(--support-text)"></div>
+                <span class="text-[10px]" style="color: var(--text-muted)">数据来自 Binance API · 每小时自动更新</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // API 基础URL - 部署时根据实际情况修改
+        const API_BASE = window.location.hostname === 'localhost' 
+            ? 'http://localhost:5000/api' 
+            : '/api';
+
+        let currentCoin = 'btc';
+        let coinData = {};
+
+        // 主题切换
+        function toggleTheme() {
+            const html = document.documentElement;
+            const current = html.getAttribute('data-theme') || 'dark';
+            const next = current === 'dark' ? 'light' : 'dark';
+            html.setAttribute('data-theme', next);
+            localStorage.setItem('theme', next);
+            setTimeout(drawAllKlines, 100);
+        }
+
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+
+        // Tab 切换
+        function switchTab(coin) {
+            currentCoin = coin;
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('tab-' + coin).classList.add('active');
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.getElementById('content-' + coin).classList.add('active');
+
+            if (!coinData[coin]) {
+                loadCoinData(coin);
+            } else {
+                setTimeout(drawAllKlines, 50);
+            }
+        }
+
+        // 加载币种数据
+        async function loadCoinData(coin) {
+            showLoading(true);
+            hideError();
+
+            try {
+                const resp = await fetch(`${API_BASE}/all/${coin}`);
+                if (!resp.ok) throw new Error('API请求失败');
+                const data = await resp.json();
+                coinData[coin] = data;
+                renderCoin(coin, data);
+                showLoading(false);
+                setTimeout(drawAllKlines, 50);
+            } catch (e) {
+                showLoading(false);
+                showError('数据加载失败: ' + e.message + '。请检查后端服务是否运行。');
+            }
+        }
+
+        // 渲染币种
+        function renderCoin(coin, data) {
+            const container = document.getElementById(coin + '-container');
+            const price = data.price || {};
+            const intervals = data.intervals || {};
+            const coinInfo = { btc: {icon:'₿', color:'from-orange-500 to-amber-600', shadow:'rgba(245,158,11,0.3)'}, 
+                              eth: {icon:'Ξ', color:'from-indigo-500 to-purple-600', shadow:'rgba(99,102,241,0.3)'}};
+            const info = coinInfo[coin];
+
+            let html = `
+                <div class="glass-card rounded-2xl p-5 mb-4">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-11 h-11 rounded-xl bg-gradient-to-br ${info.color} flex items-center justify-center text-lg font-bold shadow-lg" style="box-shadow: 0 4px 20px ${info.shadow}">
+                                ${info.icon}
+                            </div>
+                            <div>
+                                <div class="font-bold text-lg">${data.name}</div>
+                                <div class="text-[10px] font-mono coin-subtitle">${coin.toUpperCase()}/USDT</div>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <div class="font-mono text-2xl font-bold">$${formatPrice(price.price)}</div>
+                            <div class="flex items-center justify-end gap-1 text-xs font-medium mt-1" style="color: ${price.change_24h >= 0 ? 'var(--support-text)' : 'var(--resist-text)'}">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="${price.change_24h >= 0 ? 'M5 10l7-7m0 0l7 7m-7-7v18' : 'M19 14l-7 7m0 0l-7-7m7 7V3'}"/>
+                                </svg>
+                                <span>${price.change_24h >= 0 ? '+' : ''}${price.change_24h?.toFixed(2) || 0}%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <canvas id="${coin}-sparkline" class="kline-canvas"></canvas>
+                </div>
+
+                <div class="flex items-center gap-2 mb-3 px-1">
+                    <svg class="w-4 h-4 ${coin === 'btc' ? 'text-amber-500' : 'text-indigo-500'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                    </svg>
+                    <span class="text-sm font-semibold section-title">${data.name} 多周期趋势</span>
+                </div>
+            `;
+
+            const intervalOrder = ['m15', 'h1', 'h4', 'd1', 'w1'];
+            const intervalLabels = {m15:'15分钟', h1:'1小时', h4:'4小时', d1:'1天', w1:'1周'};
+            const intervalColors = {m15:'bg-blue-500', h1:'bg-purple-500', h4:'bg-amber-500', d1:'bg-pink-500', w1:'bg-cyan-500'};
+
+            intervalOrder.forEach(key => {
+                const iv = intervals[key];
+                if (!iv) return;
+                html += `
+                    <div class="level-card rounded-xl p-4 mb-3">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="w-2 h-2 rounded-full ${intervalColors[key]} level-dot"></div>
+                                <span class="text-sm font-bold">${intervalLabels[key]}</span>
+                            </div>
+                            <span class="text-xs font-bold ${iv.trend === 'bull' ? 'trend-bull' : iv.trend === 'bear' ? 'trend-bear' : 'trend-neutral'}">${iv.trend_label}</span>
+                        </div>
+                        <div class="flex items-center gap-2 mb-3">
+                            <div class="support-tag rounded-lg px-2.5 py-1 text-xs font-bold">支撑 ${formatPrice(iv.support)}</div>
+                            <div class="resist-tag rounded-lg px-2.5 py-1 text-xs font-bold">压力 ${formatPrice(iv.resistance)}</div>
+                            <div class="flex-1"></div>
+                            <span class="text-[10px]" style="color: var(--text-muted)">区间 ${formatPrice(iv.range)}</span>
+                        </div>
+                        <canvas id="${coin}-${key}" class="kline-canvas"></canvas>
+                        <p class="analysis-text text-xs mt-2">${iv.analysis}</p>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function formatPrice(price) {
+            if (price === null || price === undefined) return '--';
+            if (price >= 1000) return price.toLocaleString('en-US', {maximumFractionDigits: 0});
+            return price.toLocaleString('en-US', {maximumFractionDigits: 2});
+        }
+
+        function showLoading(show) {
+            document.getElementById('loading-state').style.display = show ? 'block' : 'none';
+        }
+
+        function showError(msg) {
+            document.getElementById('error-state').innerHTML = `<div class="error-msg">${msg}</div>`;
+            document.getElementById('error-state').style.display = 'block';
+        }
+
+        function hideError() {
+            document.getElementById('error-state').style.display = 'none';
+        }
+
+        function refreshCurrent() {
+            coinData[currentCoin] = null;
+            loadCoinData(currentCoin);
+        }
+
+        // 绘制K线
+        function drawKline(canvasId, data, bullColor, bearColor) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+
+            const w = rect.width, h = rect.height;
+            if (!data || data.length === 0) return;
+
+            const padding = 2;
+            const candleW = Math.max(2, (w - padding * 2) / data.length * 0.7);
+            const gap = (w - padding * 2 - candleW * data.length) / (data.length - 1);
+
+            let min = Infinity, max = -Infinity;
+            data.forEach(d => { min = Math.min(min, d.low); max = Math.max(max, d.high); });
+            const range = max - min || 1;
+
+            data.forEach((d, i) => {
+                const x = padding + i * (candleW + gap) + candleW / 2;
+                const isBull = d.close > d.open;
+                const color = isBull ? bullColor : bearColor;
+
+                const yHigh = h - padding - ((d.high - min) / range) * (h - padding * 2);
+                const yLow = h - padding - ((d.low - min) / range) * (h - padding * 2);
+                const yOpen = h - padding - ((d.open - min) / range) * (h - padding * 2);
+                const yClose = h - padding - ((d.close - min) / range) * (h - padding * 2);
+
+                ctx.beginPath();
+                ctx.moveTo(x, yHigh);
+                ctx.lineTo(x, yLow);
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                const bodyTop = Math.min(yOpen, yClose);
+                const bodyH = Math.max(Math.abs(yOpen - yClose), 1);
+                ctx.fillStyle = isBull ? color : color + '60';
+                ctx.fillRect(x - candleW/2, bodyTop, candleW, bodyH);
+
+                if (!isBull) {
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = 0.8;
+                    ctx.strokeRect(x - candleW/2, bodyTop, candleW, bodyH);
+                }
+            });
+        }
+
+        function drawSparkline(canvasId, data, color) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+
+            const w = rect.width, h = rect.height;
+            if (!data || data.length === 0) return;
+
+            const closes = data.map(d => d.close);
+            const min = Math.min(...closes), max = Math.max(...closes);
+            const range = max - min || 1;
+
+            const grad = ctx.createLinearGradient(0, 0, 0, h);
+            grad.addColorStop(0, color + '25');
+            grad.addColorStop(1, color + '00');
+            ctx.beginPath();
+            ctx.moveTo(0, h);
+            closes.forEach((v, i) => {
+                ctx.lineTo((i / (closes.length - 1)) * w, h - ((v - min) / range) * (h * 0.8) - h * 0.1);
+            });
+            ctx.lineTo(w, h);
+            ctx.closePath();
+            ctx.fillStyle = grad;
+            ctx.fill();
+
+            ctx.beginPath();
+            closes.forEach((v, i) => {
+                const x = (i / (closes.length - 1)) * w;
+                const y = h - ((v - min) / range) * (h * 0.8) - h * 0.1;
+                i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+            });
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.lineCap = 'round';
+            ctx.stroke();
+
+            const lx = w;
+            const ly = h - ((closes[closes.length - 1] - min) / range) * (h * 0.8) - h * 0.1;
+            ctx.beginPath();
+            ctx.arc(lx, ly, 3, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(lx, ly, 7, 0, Math.PI * 2);
+            ctx.fillStyle = color + '25';
+            ctx.fill();
+        }
+
+        function drawAllKlines() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            const bull = isLight ? '#16a34a' : '#22c55e';
+            const bear = isLight ? '#dc2626' : '#ef4444';
+
+            Object.keys(coinData).forEach(coin => {
+                const data = coinData[coin];
+                if (!data || !data.intervals) return;
+
+                // Sparkline
+                const sparkData = data.intervals.h1?.klines;
+                if (sparkData) {
+                    drawSparkline(coin + '-sparkline', sparkData, coin === 'btc' ? '#f59e0b' : '#818cf8');
+                }
+
+                // Klines
+                Object.keys(data.intervals).forEach(key => {
+                    const klines = data.intervals[key]?.klines;
+                    if (klines) {
+                        drawKline(coin + '-' + key, klines, bull, bear);
+                    }
+                });
+            });
+        }
+
+        // 实时时间
+        function updateTime() {
+            const now = new Date();
+            const y = now.getFullYear();
+            const m = String(now.getMonth() + 1).padStart(2, '0');
+            const d = String(now.getDate()).padStart(2, '0');
+            const h = String(now.getHours()).padStart(2, '0');
+            const min = String(now.getMinutes()).padStart(2, '0');
+            const s = String(now.getSeconds()).padStart(2, '0');
+            document.getElementById('current-time').textContent = `${y}.${m}.${d} ${h}:${min}:${s}`;
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        // 自动刷新
+        setInterval(() => {
+            if (currentCoin) {
+                coinData[currentCoin] = null;
+                loadCoinData(currentCoin);
+            }
+        }, 300000); // 5分钟自动刷新
+
+        // 初始加载
+        window.addEventListener('load', () => {
+            loadCoinData('btc');
+        });
+        window.addEventListener('resize', drawAllKlines);
+    </script>
+</body>
+</html>
