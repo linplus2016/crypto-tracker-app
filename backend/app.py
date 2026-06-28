@@ -50,13 +50,13 @@ COINS = {
     # 'SOL': {'symbol': 'SOLUSDT', 'name': 'Solana', 'icon': '◎'},
 }
 
-# 时间周期映射
+# 时间周期映射（不同数据源格式不同）
 INTERVALS = {
-    'm15': '15m',
-    'h1': '1h',
-    'h4': '4h',
-    'd1': '1d',
-    'w1': '1w',
+    'm15': {'binance': '15m', 'okx': '15m'},
+    'h1': {'binance': '1h', 'okx': '1H'},
+    'h4': {'binance': '4h', 'okx': '4H'},
+    'd1': {'binance': '1d', 'okx': '1D'},
+    'w1': {'binance': '1w', 'okx': '1W'},
 }
 
 
@@ -297,7 +297,7 @@ def get_klines(coin, interval):
         return jsonify({'error': 'Unsupported interval'}), 400
 
     symbol = COINS[coin]['symbol']
-    api_interval = INTERVALS[interval]
+    api_interval = INTERVALS[interval][DATA_SOURCE]
     limit = request.args.get('limit', 20, type=int)
 
     klines = fetch_klines(symbol, api_interval, limit)
@@ -328,7 +328,7 @@ def get_analysis(coin, interval):
         return jsonify({'error': 'Unsupported interval'}), 400
 
     symbol = COINS[coin]['symbol']
-    api_interval = INTERVALS[interval]
+    api_interval = INTERVALS[interval][DATA_SOURCE]
 
     # 获取K线和价格数据
     klines = fetch_klines(symbol, api_interval, 20)
@@ -402,7 +402,7 @@ def get_all_data(coin):
     # 获取所有周期的K线和分析
     intervals_data = {}
     for interval_key, api_interval in INTERVALS.items():
-        klines = fetch_klines(symbol, api_interval, 20)
+        klines = fetch_klines(symbol, api_interval[DATA_SOURCE], 20)
         support, resistance = calculate_support_resistance(klines) if klines else (None, None)
         analysis = generate_analysis(coin, interval_key, klines, price_data) if klines else ""
 
@@ -454,7 +454,7 @@ def background_refresh():
                 fetch_price(symbol)
                 # 刷新所有周期K线
                 for interval in INTERVALS.values():
-                    fetch_klines(symbol, interval, 20)
+                    fetch_klines(symbol, interval[DATA_SOURCE], 20)
                 print(f'[{datetime.now()}] Refreshed data for {coin_id}')
             time.sleep(30)  # 每30秒刷新一次
         except Exception as e:
