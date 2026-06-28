@@ -1,7 +1,7 @@
 FROM nginx:alpine
 
 # 复制前端文件
-COPY . /usr/share/nginx/html
+COPY frontend/ /usr/share/nginx/html
 
 # 复制nginx配置
 COPY nginx/nginx.conf /etc/nginx/conf.d/default.conf
